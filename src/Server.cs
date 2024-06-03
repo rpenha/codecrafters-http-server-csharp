@@ -3,21 +3,33 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using Cocona;
 
 var cts = new CancellationTokenSource();
 var ct = cts.Token;
 var pendingRequests = new ConcurrentBag<Task>();
-var server = new TcpListener(IPAddress.Any, 4221);
-server.Start();
 
-_ = Task.Run(async () =>
+CoconaLiteApp.Run((string directory) =>
 {
-    while (!ct.IsCancellationRequested)
+    Console.WriteLine($"Directory: {directory}");
+
+    if (!Directory.Exists(directory))
+        throw new DirectoryNotFoundException($"Directory '{directory}' not found");
+    
+    Environment.CurrentDirectory = directory;
+
+    Task.Run(async () =>
     {
-        var socket = await server.AcceptSocketAsync(); // wait for client
-        var task = Task.Run(async () => await HandleRequest(socket, ct), ct);
-        pendingRequests.Add(task);
-    }
+        var server = new TcpListener(IPAddress.Any, 4221);
+        server.Start();
+
+        while (!ct.IsCancellationRequested)
+        {
+            var socket = await server.AcceptSocketAsync(); // wait for client
+            var task = Task.Run(async () => await HandleRequest(socket, ct), ct);
+            pendingRequests.Add(task);
+        }
+    });
 });
 
 Console.Read();
@@ -61,8 +73,24 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
             ["user-agent"] => Encoding.UTF8.GetBytes(
                 $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {headers["User-Agent"].Length}\r\n\r\n{headers["User-Agent"]}"
             ),
+            ["files", var filename] => await GetFileAsync(filename),
             _ => notFound
         };
+
+        async Task<ArraySegment<byte>> GetFileAsync(string filename)
+        {
+            var directory = Environment.CurrentDirectory;
+            var path = Path.Combine(directory, filename);
+            
+            if (!File.Exists(path)) return notFound;
+            
+            var body = await File.ReadAllBytesAsync(path, cancellationToken);
+            
+            return new ArraySegment<byte>([
+                ..Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {body.Length}\r\n\r\n"),
+                ..body
+            ]);
+        }
 
         await socket.SendAsync(response);
     }
