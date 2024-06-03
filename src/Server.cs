@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 
@@ -23,6 +24,16 @@ using var reader = new StringReader(Encoding.UTF8.GetString(buffer));
 
 var line = await reader.ReadLineAsync(ct);
 
+// Headers
+var headers = new Dictionary<string, string>();
+
+while (await reader.ReadLineAsync(ct) is { } headerValue)
+{
+    if (string.IsNullOrWhiteSpace(headerValue)) break;
+    var kv = headerValue.Split(": ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    headers.Add(kv[0], kv[1]);
+}
+
 var url = line!.Split(' ')[1];
 var urlFragments = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
@@ -30,6 +41,7 @@ var response = urlFragments switch
 {
     [] => ok,
     ["echo", var msg] => Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {msg.Length}\r\n\r\n{msg}"),
+    ["user-agent"] => Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {headers["User-Agent"].Length}\r\n\r\n{headers["User-Agent"]}"),
     _ => notFound
 };
 
