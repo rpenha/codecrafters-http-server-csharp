@@ -9,14 +9,15 @@ var cts = new CancellationTokenSource();
 var ct = cts.Token;
 var pendingRequests = new ConcurrentBag<Task>();
 
-CoconaLiteApp.Run((string directory) =>
+CoconaLiteApp.Run((string? directory) =>
 {
-    Console.WriteLine($"Directory: {directory}");
+    if (!string.IsNullOrWhiteSpace(directory))
+    {
+        if (!Directory.Exists(directory))
+            throw new DirectoryNotFoundException($"Directory '{directory}' not found");
 
-    if (!Directory.Exists(directory))
-        throw new DirectoryNotFoundException($"Directory '{directory}' not found");
-    
-    Environment.CurrentDirectory = directory;
+        Environment.CurrentDirectory = directory;
+    }
 
     Task.Run(async () =>
     {
