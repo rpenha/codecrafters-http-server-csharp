@@ -45,7 +45,10 @@ async Task HandleRequest(TcpClient socket, CancellationToken cancellationToken)
 
     try
     {
-        using var reader = new StreamReader(socket.GetStream(), Encoding.UTF8);
+        var stream = socket.GetStream();
+        var buffer = new byte[socket.Available];
+        _ = await stream.ReadAsync(buffer, cancellationToken);
+        using var reader = new StringReader(Encoding.UTF8.GetString(buffer.ToArray()));
         var line = await reader.ReadLineAsync(cancellationToken);
         var parts = line!.Split(' ');
         var verb = parts[0];
@@ -112,7 +115,7 @@ async Task HandleRequest(TcpClient socket, CancellationToken cancellationToken)
             ]);
         }
 
-        await using var writer = new StreamWriter(socket.GetStream());
+        await using var writer = new StreamWriter(stream);
         await writer.WriteAsync(Encoding.UTF8.GetChars(response.ToArray()));
     }
     finally
