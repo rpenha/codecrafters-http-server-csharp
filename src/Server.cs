@@ -1,4 +1,3 @@
-using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -26,8 +25,8 @@ CoconaLiteApp.Run((string? directory) =>
 
         while (!ct.IsCancellationRequested)
         {
-            var socket = await server.AcceptSocketAsync(); // wait for client
-            var task = Task.Run(async () => await HandleRequest(socket, ct), ct);
+            var client = await server.AcceptTcpClientAsync(ct);
+            var task = Task.Run(async () => await HandleRequest(client, ct), ct);
             pendingRequests.Add(task);
         }
     });
@@ -39,65 +38,85 @@ await Task.WhenAll(pendingRequests);
 Console.WriteLine("Good bye!");
 Environment.Exit(0);
 
-async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
+async Task HandleRequest(TcpClient socket, CancellationToken cancellationToken)
 {
     var notFound = "HTTP/1.1 404 Not Found\r\n\r\n"u8.ToArray();
     var ok = "HTTP/1.1 200 OK\r\n\r\n"u8.ToArray();
-    const int bufferSize = 1024;
-    var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
 
     try
     {
-        await socket.ReceiveAsync(buffer, cancellationToken);
-        using var reader = new StringReader(Encoding.UTF8.GetString(buffer));
+        using var reader = new StreamReader(socket.GetStream(), Encoding.UTF8);
         var line = await reader.ReadLineAsync(cancellationToken);
+        var parts = line!.Split(' ');
+        var verb = parts[0];
+        var url = parts[1];
+        var urlFragments = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
         // Headers
         var headers = new Dictionary<string, string>();
+        var sb = new StringBuilder();
+        var isBody = false;
 
-        while (await reader.ReadLineAsync(cancellationToken) is { } headerValue)
+        while (await reader.ReadLineAsync(cancellationToken) is { } value)
         {
-            if (string.IsNullOrWhiteSpace(headerValue)) break;
-            var kv = headerValue.Split(": ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            headers.Add(kv[0], kv[1]);
+            if (string.IsNullOrWhiteSpace(value) && !isBody)
+            {
+                isBody = true;
+            }
+            
+            if (!isBody)
+            {
+                var kv = value.Split(": ", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                headers.Add(kv[0], kv[1]);
+            }
+            else
+            {
+                sb.AppendLine(value);
+            }
         }
 
-        var url = line!.Split(' ')[1];
-        var urlFragments = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
-        var response = urlFragments switch
+        var response = (verb, urlFragments) switch
         {
-            [] => ok,
-            ["echo", var msg] => Encoding.UTF8.GetBytes(
+            ("GET", []) => ok,
+            ("GET", ["echo", var msg]) => Encoding.UTF8.GetBytes(
                 $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {msg.Length}\r\n\r\n{msg}"
             ),
-            ["user-agent"] => Encoding.UTF8.GetBytes(
+            ("GET", ["user-agent"]) => Encoding.UTF8.GetBytes(
                 $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {headers["User-Agent"].Length}\r\n\r\n{headers["User-Agent"]}"
             ),
-            ["files", var filename] => await GetFileAsync(filename),
+            ("GET", ["files", var filename]) => await GetFileAsync(filename),
+            ("POST", ["files", var filename]) => await PostFileAsync(filename, sb.ToString()),
             _ => notFound
         };
+
+        async Task<ArraySegment<byte>> PostFileAsync(string filename, string body)
+        {
+            var path = Path.Combine(Environment.CurrentDirectory, filename);
+            await File.WriteAllTextAsync(path, body, cancellationToken);
+            return Encoding.UTF8.GetBytes($"HTTP/1.1 201 OK\r\nContent-Length: {body?.Length ?? 0}\r\n\r\n");
+        }
 
         async Task<ArraySegment<byte>> GetFileAsync(string filename)
         {
             var directory = Environment.CurrentDirectory;
             var path = Path.Combine(directory, filename);
-            
+
             if (!File.Exists(path)) return notFound;
-            
-            var body = await File.ReadAllBytesAsync(path, cancellationToken);
-            
+
+            var data = await File.ReadAllBytesAsync(path, cancellationToken);
+
             return new ArraySegment<byte>([
-                ..Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {body.Length}\r\n\r\n"),
-                ..body
+                ..Encoding.UTF8.GetBytes(
+                    $"HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: {data.Length}\r\n\r\n"),
+                ..data
             ]);
         }
 
-        await socket.SendAsync(response);
+        await using var writer = new StreamWriter(socket.GetStream());
+        await writer.WriteAsync(Encoding.UTF8.GetChars(response.ToArray()));
     }
     finally
     {
-        ArrayPool<byte>.Shared.Return(buffer);
         socket.Dispose();
     }
 }
