@@ -26,7 +26,7 @@ CoconaLiteApp.Run((string? directory) =>
         while (!ct.IsCancellationRequested)
         {
             var client = await server.AcceptTcpClientAsync(ct);
-            var task = Task.Run(async () => await HandleRequest(client, ct), ct);
+            var task = HandleRequest(client, ct);
             pendingRequests.Add(task);
         }
     });
