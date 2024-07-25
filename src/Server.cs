@@ -114,7 +114,7 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
             return
             [
                 ..Encoding.UTF8.GetBytes(
-                    $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\n\r\nContent-Length: {data.Length}\r\n\r\n"),
+                    $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {data.Length}\r\n\r\n"),
                 ..body.GZip()
             ];
 
