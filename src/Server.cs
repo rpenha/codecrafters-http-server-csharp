@@ -109,7 +109,10 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
             
             var data = body.GZip();
             
-            return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {data.Length}\r\n\r\n{data}");
+            return [
+                ..Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {data.Length}\r\n\r\n"),
+                ..data
+            ];
         }
 
         async Task<ArraySegment<byte>> PostFileAsync(string filename, string body)
@@ -153,14 +156,14 @@ public static class Extensions
         return headers.TryGetValue(AcceptEncoding, out var value) && value.Split(", ").Contains("gzip");
     }
 
-    public static string GZip(this string self)
+    public static byte[] GZip(this string self)
     {
         var input = Encoding.UTF8.GetBytes(self);
         using var output = new MemoryStream();
-        using var gZipStream = new GZipStream(output, CompressionMode.Compress);
-        gZipStream.Write(input, 0, input.Length);
-        var sb = new StringBuilder();
-        output.ToArray().ToList().ForEach(x => sb.Append($"{x:X2} "));
-        return sb.ToString().TrimEnd();
+        using (var gZipStream = new GZipStream(output, CompressionMode.Compress))
+        {
+            gZipStream.Write(input, 0, input.Length);
+        }
+        return output.ToArray();
     }
 }
