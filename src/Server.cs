@@ -74,7 +74,7 @@ async Task HandleRequest(TcpClient socket, CancellationToken cancellationToken)
             }
             else
             {
-                sb.AppendLine(value);
+                sb.Append(value);
             }
         }
 
@@ -96,7 +96,7 @@ async Task HandleRequest(TcpClient socket, CancellationToken cancellationToken)
         {
             var path = Path.Combine(Environment.CurrentDirectory, filename);
             await File.WriteAllTextAsync(path, body, cancellationToken);
-            return Encoding.UTF8.GetBytes($"HTTP/1.1 201 OK\r\nContent-Length: {body?.Length ?? 0}\r\n\r\n");
+            return Encoding.UTF8.GetBytes($"HTTP/1.1 201 OK\r\nContent-Length: {body.Length}\r\n\r\n");
         }
 
         async Task<ArraySegment<byte>> GetFileAsync(string filename)
