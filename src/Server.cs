@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
@@ -25,8 +26,9 @@ CoconaLiteApp.Run((string? directory) =>
 
         while (!ct.IsCancellationRequested)
         {
-            var client = await server.AcceptTcpClientAsync(ct);
-            var task = HandleRequest(client, ct);
+            //var client = await server.AcceptTcpClientAsync(ct);
+            var socket = await server.AcceptSocketAsync(); // wait for client
+            var task = HandleRequest(socket, ct);
             pendingRequests.Add(task);
         }
     });
@@ -38,25 +40,41 @@ await Task.WhenAll(pendingRequests);
 Console.WriteLine("Good bye!");
 Environment.Exit(0);
 
-async Task HandleRequest(TcpClient socket, CancellationToken cancellationToken)
+async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
 {
     var notFound = "HTTP/1.1 404 Not Found\r\n\r\n"u8.ToArray();
     var ok = "HTTP/1.1 200 OK\r\n\r\n"u8.ToArray();
+    const int bufferSize = 1024;
+    var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
 
     try
     {
-        var stream = socket.GetStream();
-        var buffer = new byte[socket.Available];
-        _ = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
-        using var reader = new StringReader(Encoding.UTF8.GetString(buffer.ToArray()));
+        await socket.ReceiveAsync(buffer, cancellationToken);
+        using var reader = new StringReader(Encoding.UTF8.GetString(buffer));
         var line = await reader.ReadLineAsync(cancellationToken);
+        // Headers
+        var headers = new Dictionary<string, string>();
+        // while (await reader.ReadLineAsync(cancellationToken) is {} headerValue) 
+        // {
+        //     if (string.IsNullOrWhiteSpace(headerValue))
+        //         break;
+        //     var kv = headerValue.Split(": ", StringSplitOptions.RemoveEmptyEntries |
+        //                                      StringSplitOptions.TrimEntries);
+        //     headers.Add(kv[0], kv[1]);
+        // }
+        
+        // var stream = socket.GetStream();
+        // var buffer = new byte[socket.Available];
+        // _ = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
+        // using var reader = new StringReader(Encoding.UTF8.GetString(buffer.ToArray()));
+        // var line = await reader.ReadLineAsync(cancellationToken);
         var parts = line!.Split(' ');
         var verb = parts[0];
         var url = parts[1];
         var urlFragments = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
 
         // Headers
-        var headers = new Dictionary<string, string>();
+        //var headers = new Dictionary<string, string>();
         var sb = new StringBuilder();
         var isBody = false;
 
@@ -115,11 +133,13 @@ async Task HandleRequest(TcpClient socket, CancellationToken cancellationToken)
             ]);
         }
 
-        await using var writer = new StreamWriter(stream);
-        await writer.WriteAsync(Encoding.UTF8.GetChars(response.ToArray()));
+        await socket.SendAsync(response);
+        // await using var writer = new StreamWriter(stream);
+        // await writer.WriteAsync(Encoding.UTF8.GetChars(response.ToArray()));
     }
     finally
     {
+        ArrayPool<byte>.Shared.Return(buffer);
         socket.Dispose();
     }
 }
