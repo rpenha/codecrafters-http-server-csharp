@@ -111,9 +111,9 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
 
             var data = new StringBuilder();
 
-            body.GZip().ToList().ForEach(x => data.Append($"{x:x2}"));
+            body.GZip().ToList().ForEach(x => data.Append($"{x:x2} "));
 
-            return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {data.Length}\r\n\r\n{data}");
+            return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {data.Length}\r\n\r\n{data.ToString().Trim()}");
         }
 
         async Task<ArraySegment<byte>> PostFileAsync(string filename, string body)
