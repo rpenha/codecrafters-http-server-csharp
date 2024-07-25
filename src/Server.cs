@@ -95,13 +95,13 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
         
         byte[] EchoAsync(string s)
         {
-            var encoding = headers.TryGetValue(acceptEncoding, out var value) && value == "gzip" ? "\r\nContent-Encoding: gzip\r\n" : string.Empty; 
+            var encoding = headers.AcceptsGzip() ? "\r\nContent-Encoding: gzip\r\n" : string.Empty; 
             return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain{encoding}\r\nContent-Length: {s.Length}\r\n\r\n{s}");
         }
 
         Task<ArraySegment<byte>> OkAsync()
         {
-            var result = headers.TryGetValue(acceptEncoding, out var value) && value == "gzip"
+            var result = headers.AcceptsGzip()
                 ? (byte[])[..ok, ..contentEncodingGzip, ..newLine]
                 : [..ok, ..newLine];
 
@@ -137,5 +137,14 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
     {
         ArrayPool<byte>.Shared.Return(buffer);
         socket.Dispose();
+    }
+}
+
+public static class Extensions
+{
+    private const string AcceptEncoding = "Accept-Encoding";
+    public static bool AcceptsGzip(this IDictionary<string, string> headers)
+    {
+        return headers.TryGetValue(AcceptEncoding, out var value) && value.Split(", ").Contains("gzip");
     }
 }
