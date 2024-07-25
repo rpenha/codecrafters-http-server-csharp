@@ -106,16 +106,18 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
 
         byte[] EchoAsync(string body)
         {
-            var acceptsGzip = headers.AcceptsGzip();
-            var encoding = acceptsGzip ? "\r\nContent-Encoding: gzip\r\n" : string.Empty;
+            if (!headers.AcceptsGzip())
+                return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length}\r\n\r\n{body}");
+            
+            var data = body.GZip();
+            
+            return
+            [
+                ..Encoding.UTF8.GetBytes(
+                    $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\n\r\nContent-Length: {data.Length}\r\n\r\n"),
+                ..body.GZip()
+            ];
 
-            return acceptsGzip
-                ?
-                [
-                    ..Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\n\r\nContent-Length: {body.Length}\r\n\r\n"),
-                    ..body.GZip()
-                ]
-                : Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length}\r\n\r\n{body}");
         }
 
         async Task<ArraySegment<byte>> PostFileAsync(string filename, string body)
