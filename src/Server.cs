@@ -42,8 +42,11 @@ Environment.Exit(0);
 
 async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
 {
+    var separator = "\r\n\r\n"u8.ToArray();
     var notFound = "HTTP/1.1 404 Not Found\r\n\r\n"u8.ToArray();
-    var ok = "HTTP/1.1 200 OK\r\n\r\n"u8.ToArray();
+    var ok = "HTTP/1.1 200 OK"u8.ToArray();
+    var contentEncodingGzip = "Content-Encoding: gzip"u8.ToArray();
+    const string acceptEncoding = "Accept-Encoding";
     const int bufferSize = 1024;
     var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
 
@@ -82,17 +85,32 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
 
         var response = (verb, urlFragments) switch
         {
-            ("GET", []) => ok,
-            ("GET", ["echo", var msg]) => Encoding.UTF8.GetBytes(
-                $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {msg.Length}\r\n\r\n{msg}"
-            ),
-            ("GET", ["user-agent"]) => Encoding.UTF8.GetBytes(
-                $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {headers["User-Agent"].Length}\r\n\r\n{headers["User-Agent"]}"
-            ),
+            ("GET", []) => await OkAsync(),
+            ("GET", ["echo", var msg]) => EchoAsync(msg),
+            ("GET", ["user-agent"]) => Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {headers["User-Agent"].Length}\r\n\r\n{headers["User-Agent"]}"),
             ("GET", ["files", var filename]) => await GetFileAsync(filename),
             ("POST", ["files", var filename]) => await PostFileAsync(filename, sb.ToString()),
             _ => notFound
         };
+        
+        byte[] EchoAsync(string s)
+        {
+            var encoding = headers.TryGetValue(acceptEncoding, out var value) && value == "gzip" ? "\r\nContent-Encoding: gzip\r\n" : string.Empty; 
+            return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain{encoding}\r\nContent-Length: {s.Length}\r\n\r\n{s}");
+        }
+
+        Task<ArraySegment<byte>> OkAsync()
+        {
+            var result = headers.TryGetValue(acceptEncoding, out var value) && value == "gzip"
+                ? [
+                    ..ok,
+                    ..separator,
+                    ..contentEncodingGzip
+                ]
+                : ok;
+
+            return Task.FromResult(new ArraySegment<byte>(result));
+        }
 
         async Task<ArraySegment<byte>> PostFileAsync(string filename, string body)
         {
@@ -118,8 +136,6 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
         }
 
         await socket.SendAsync(response);
-        // await using var writer = new StreamWriter(stream);
-        // await writer.WriteAsync(Encoding.UTF8.GetChars(response.ToArray()));
     }
     finally
     {
