@@ -52,29 +52,13 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
         await socket.ReceiveAsync(buffer, cancellationToken);
         using var reader = new StringReader(Encoding.UTF8.GetString(buffer));
         var line = await reader.ReadLineAsync(cancellationToken);
+        
         // Headers
         var headers = new Dictionary<string, string>();
-        // while (await reader.ReadLineAsync(cancellationToken) is {} headerValue) 
-        // {
-        //     if (string.IsNullOrWhiteSpace(headerValue))
-        //         break;
-        //     var kv = headerValue.Split(": ", StringSplitOptions.RemoveEmptyEntries |
-        //                                      StringSplitOptions.TrimEntries);
-        //     headers.Add(kv[0], kv[1]);
-        // }
-        
-        // var stream = socket.GetStream();
-        // var buffer = new byte[socket.Available];
-        // _ = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken);
-        // using var reader = new StringReader(Encoding.UTF8.GetString(buffer.ToArray()));
-        // var line = await reader.ReadLineAsync(cancellationToken);
         var parts = line!.Split(' ');
         var verb = parts[0];
         var url = parts[1];
         var urlFragments = url.Split('/', StringSplitOptions.RemoveEmptyEntries);
-
-        // Headers
-        //var headers = new Dictionary<string, string>();
         var sb = new StringBuilder();
         var isBody = false;
 
@@ -92,7 +76,7 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
             }
             else
             {
-                sb.Append(value);
+                sb.Append(value.Replace("\0", string.Empty));
             }
         }
 
