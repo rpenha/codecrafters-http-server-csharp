@@ -47,7 +47,6 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
     var notFound = "HTTP/1.1 404 Not Found\r\n\r\n"u8.ToArray();
     var ok = "HTTP/1.1 200 OK\r\n"u8.ToArray();
     var contentEncodingGzip = "Content-Encoding: gzip"u8.ToArray();
-    const string acceptEncoding = "Accept-Encoding";
     const int bufferSize = 1024;
     var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
 
@@ -88,8 +87,7 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
         {
             ("GET", []) => await OkAsync(),
             ("GET", ["echo", var msg]) => EchoAsync(msg),
-            ("GET", ["user-agent"]) => Encoding.UTF8.GetBytes(
-                $"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {headers["User-Agent"].Length}\r\n\r\n{headers["User-Agent"]}"),
+            ("GET", ["user-agent"]) => Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {headers["User-Agent"].Length}\r\n\r\n{headers["User-Agent"]}"),
             ("GET", ["files", var filename]) => await GetFileAsync(filename),
             ("POST", ["files", var filename]) => await PostFileAsync(filename, sb.ToString()),
             _ => notFound
@@ -108,13 +106,10 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
         {
             if (!headers.AcceptsGzip())
                 return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {body.Length}\r\n\r\n{body}");
-
-            var data = new StringBuilder();
-
-            body.GZip().ToList().ForEach(x => data.Append($"{x:x2} "));
-
-            var output = data.ToString().Trim();
-            return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {output.Length}\r\n\r\n{output}");
+            
+            var data = body.GZip();
+            
+            return Encoding.UTF8.GetBytes($"HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: {data.Length}\r\n\r\n{data}");
         }
 
         async Task<ArraySegment<byte>> PostFileAsync(string filename, string body)
@@ -158,13 +153,14 @@ public static class Extensions
         return headers.TryGetValue(AcceptEncoding, out var value) && value.Split(", ").Contains("gzip");
     }
 
-    public static byte[] GZip(this string self)
+    public static string GZip(this string self)
     {
-        var bytes = Encoding.UTF8.GetBytes(self);
-        using var input = new MemoryStream(bytes);
+        var input = Encoding.UTF8.GetBytes(self);
         using var output = new MemoryStream();
         using var gZipStream = new GZipStream(output, CompressionMode.Compress);
-        input.CopyTo(gZipStream);
-        return output.ToArray();
+        gZipStream.Write(input, 0, input.Length);
+        var sb = new StringBuilder();
+        output.ToArray().ToList().ForEach(x => sb.Append($"{x:X2} "));
+        return sb.ToString().TrimEnd();
     }
 }
