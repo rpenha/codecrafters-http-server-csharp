@@ -42,9 +42,9 @@ Environment.Exit(0);
 
 async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
 {
-    var separator = "\r\n\r\n"u8.ToArray();
+    var newLine = "\r\n"u8.ToArray();
     var notFound = "HTTP/1.1 404 Not Found\r\n\r\n"u8.ToArray();
-    var ok = "HTTP/1.1 200 OK"u8.ToArray();
+    var ok = "HTTP/1.1 200 OK\r\n"u8.ToArray();
     var contentEncodingGzip = "Content-Encoding: gzip"u8.ToArray();
     const string acceptEncoding = "Accept-Encoding";
     const int bufferSize = 1024;
@@ -102,12 +102,8 @@ async Task HandleRequest(Socket socket, CancellationToken cancellationToken)
         Task<ArraySegment<byte>> OkAsync()
         {
             var result = headers.TryGetValue(acceptEncoding, out var value) && value == "gzip"
-                ? [
-                    ..ok,
-                    ..separator,
-                    ..contentEncodingGzip
-                ]
-                : ok;
+                ? (byte[])[..ok, ..contentEncodingGzip, ..newLine]
+                : [..ok, ..newLine];
 
             return Task.FromResult(new ArraySegment<byte>(result));
         }
